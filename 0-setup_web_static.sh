@@ -1,81 +1,37 @@
-#!/usr/bin/python3
-"""Fabric script (based on the file 1-pack_web_static.py) that distributes
-an archive to your web servers,using the function do_deploy
-"""
-from fabric.api import *
-from fabric.operations import put
-from datetime import datetime
-import os
+#!/usr/bin/env bash
+#Bash script that sets up web servers for the deployment of web_static
 
-env.hosts = ["54.160.117.237", "100.25.31.84"]   # <IP web-01>, <IP web-02>
+#Install nginx.
+sudo apt update
+sudo apt install -y nginx
 
+#Create default nginx folder for the pages.
+sudo mkdir -p /data/web_static/shared/
+sudo mkdir -p /data/web_static/releases/test/
 
-def do_pack():
-    """packages all contents from web_static into .tgz archive
-    """
-    n = datetime.now().strftime("%Y%m%d%H%M%S")
-    local('mkdir -p versions')
-    result = local('tar -cvf versions/web_static_{}.tgz web_static'
-                   .format(n))
-    if result.failed:
-        return None
-    else:
-        return result
+#Create a fake HTML file /data/web_static/releases/test/index.html (with simple content, to test your Nginx configuration)
+sudo touch /data/web_static/releases/test/index.html
 
+#Create a symbolic link /data/web_static/current linked to the /data/web_static/releases/test/ folder.
+# If the symbolic link already exists, it should be deleted and recreated every time the script is ran.
+sudo rm /data/web_static/current
+sudo ln -sf /data/web_static/releases/test /data/web_static/current
 
-def do_deploy(archive_path):
-    """Deploys a static archive to my web servers"""
+#Give ownership of the /data/ folder to the ubuntu user AND group (you can assume this user and group exist).
+# This should be recursive; everything inside should be created/owned by this user/group.
+sudo chown -R ubuntu:ubuntu /data/
 
-    if not os.path.isfile(archive_path):
-        print('archive file does not exist...')
-        return False  # Returns False if the file at archive_path doesnt exist
-    try:
-        archive = archive_path.split('/')[1]
-        no_archive_ext = archive.split('.')[0]
-    except Exception:
-        print('failed to get archive name from split...')
-        return False
+#Overwite file content.
+echo "<html>
+  <head>
+  </head>
+  <body>
+    Holberton School
+  </body>
+</html>" > /data/web_static/releases/test/index.html
 
-    uploaded = put(archive_path, '/tmp/')
-    if uploaded.failed:
-        return False
-    Res = run('mkdir -p /data/web_static/releases/{}/'.format(no_archive_ext))
-    if Res.failed:
-        print('failed to create archive directory for relase...')
-        return False
-    Res = run('tar -C /data/web_static/releases/{} -xzf /tmp/{}'.format(
-               no_archive_ext, archive))
-    if Res.failed:
-        print('failed to untar archive...')
-        return False
-    Res = run('rm /tmp/{}'.format(archive))
-    if Res.failed:
-        print('failed to remove archive...')
-        return False
-    Res = run('mv /data/web_static/releases/{}/web_static/* \
-               /data/web_static/releases/{}'
-              .format(no_archive_ext, no_archive_ext))
-    if Res.failed:
-        print('failed to move extraction to proper directory...')
-        return False
-    Res = run('rm -rf /data/web_static/releases/{}/web_static'
-              .format(no_archive_ext))
-    if Res.failed:
-        print('failed to remove first copy of extraction after move...')
-        return False
+#Create an endpoint to index.html.
+sudo sed -i "s/server_name _;/&\n\n\tlocation \/hbnb_static {\n\t\talias \/data\/web_static\/current;\n\t\tindex index.html;\n\t}\n/" /etc/nginx/sites-enabled/default
 
-    # clean up old release and remove it.
-
-    Res = run('rm -rf /data/web_static/current')
-    if Res.failed:
-        print('failed to clean up old release...')
-        return False
-    Res = run('ln -sfn /data/web_static/releases/{} /data/web_static/current'
-              .format(no_archive_ext))
-    if Res.failed:
-        print('failed to create link to new release...')
-        return False
-
-    print('\nNew Version Successfuly Deployed!\n')
-
-    return True
+#Restart nginx server.
+sudo service nginx restart
