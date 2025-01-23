@@ -1,30 +1,34 @@
 #!/usr/bin/python3
-# Fabfile to delete out-of-date archives.
-import os
-from fabric.api import *
+""" 0x03. AirBnB clone - Deploy static, task 4. Keep it clean!
+"""
+from fabric.api import env, run, local
 
-env.hosts = ["104.196.168.90", "35.196.46.172"]
+env.hosts = ['35.196.49.136', '34.74.70.223']
+env.user = 'ubuntu'
 
 
 def do_clean(number=0):
-    """Delete out-of-date archives.
+    """ Deletes out-of-date .tgz archives of `web_static/`, both local and
+    remote, created by `do_pack`.
 
     Args:
-        number (int): The number of archives to keep.
+       (str): number of archives, including the most recent, to keep. If 0 or
+            1, only the most recent is kept.
 
-    If number is 0 or 1, keeps only the most recent archive. If
-    number is 2, keeps the most and second-most recent archives,
-    etc.
     """
-    number = 1 if int(number) == 0 else int(number)
+    number = eval(number)
+    if number == 0:
+        number = 1
+    # local removal of tgz archives
+    pipe = ' '.join(('ls -t versions/ | tail -n +{:d} |'.format(number+1),
+                     'sed -e "s/^/versions\//" |',
+                     'xargs rm -rf'))
+    local(pipe)
 
-    archives = sorted(os.listdir("versions"))
-    [archives.pop() for i in range(number)]
-    with lcd("versions"):
-        [local("rm ./{}".format(a)) for a in archives]
-
-    with cd("/data/web_static/releases"):
-        archives = run("ls -tr").split()
-        archives = [a for a in archives if "web_static_" in a]
-        [archives.pop() for i in range(number)]
-        [run("rm -rf ./{}".format(a)) for a in archives]
+    # run on server to remove outdated directories in web_static/releases/
+    pipe = ' '.join(('ls -t /data/web_static/releases/ |',
+                     'sed -e "/test/d" |',
+                     'tail -n +{:d} |'.format(number+1),
+                     'sed -e "s/^/\/data\/web_static\/releases\//" |',
+                     'xargs rm -rf'))
+    run(pipe)
